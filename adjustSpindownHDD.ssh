@@ -1,0 +1,48 @@
+#!/bin/bash
+#
+# This script intends to spin down the hard drive later after the last I/O.
+# Hard drive tools don't do the job, my drive spins down after 3 minutes of inactivity.
+# The script monitors I/O in directory $DRIVE_MNT and generates a heartbeat
+# (that is touching file $HEARTBEAT every $HEARTBEAT_RATE minutes for $ENDURANCE
+# minutes after the last activity). The I/O is supposed to be detected by the original   
+# I/O monitoring tool, so that the drive does not spin down.
+
+# settings
+
+ENDURANCE=27 # period that the heartbeat will endure after last io in minutes
+HEARTBEAT_RATE=1 # update heartbeat file every x minutes
+
+DRIVE_MNT=/mnt/6TB
+DRIVE_EXCLUDE='@/mnt/6TB/Arbeitsrechner_Sicherung @/mnt/6TB/Arbeitsrechner_SicherungIT @/mnt/6TB/Arbeitsrechner_SicherungIT_zip'
+
+LASTIOECHO=/tmp/.lastioecho # file that tracks last io. Should not be on the drive.
+HEARTBEAT=/mnt/6TB/.heartbeat # file that will be touched every HEARTBEAT_RATE minutes. Should keep the drive active.
+
+# script
+
+touch $LASTIOECHO
+touch $HEARTBEAT
+
+trap 'kill $BGPID; exit' INT
+
+{ 
+while true  
+do 
+   if [ $(expr $(date +%s) - $(stat -c %Y /tmp/.lastioecho)) -lt $(expr $ENDURANCE \* 60) ]
+   then
+      touch $HEARTBEAT
+      # echo "lets touch this"
+   # else
+      # echo "na, rather not"
+   fi
+   sleep "${HEARTBEAT_RATE}m"  
+done 
+}&
+BGPID=$!
+
+sysctl fs.inotify.max_user_watches=65536
+
+inotifywait -mrq --exclude "($HEARTBEAT)" $DRIVE_MNT $DRIVE_EXCLUDE | while read WHATEVER
+do
+   touch $LASTIOECHO
+done
